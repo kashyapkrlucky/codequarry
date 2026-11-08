@@ -1,0 +1,130 @@
+// CodeQuarry database schema (Prisma 7 + Neon PostgreSQL).
+// Full-text search uses a weighted `search_vector` tsvector column maintained by
+// the content-ingestion pipeline (see src/lib/content/ingest.ts) and a GIN index
+// added in a hand-written migration step.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CheatsheetStatus {
+  draft
+  published
+  archived
+}
+
+enum Difficulty {
+  beginner
+  intermediate
+  advanced
+}
+
+model Category {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String       @unique
+  description String
+  icon        String
+  parentId    String?      @map("parent_id") @db.Uuid
+  sortOrder   Int          @default(0) @map("sort_order")
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  parent      Category?    @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[]   @relation("CategoryTree")
+  cheatsheets Cheatsheet[]
+
+  @@index([parentId])
+  @@index([sortOrder])
+  @@map("categories")
+}
+
+model Technology {
+  id          String                 @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String                 @unique
+  description String
+  icon        String
+  createdAt   DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  cheatsheets CheatsheetTechnology[]
+
+  @@map("technologies")
+}
+
+model Cheatsheet {
+  id           String                 @id @default(uuid()) @db.Uuid
+  title        String
+  slug         String                 @unique
+  description  String
+  /// Raw MDX source. Rendered server-side with a fixed component allow-list and JS expressions blocked.
+  content      String
+  categoryId   String                 @map("category_id") @db.Uuid
+  difficulty   Difficulty             @default(beginner)
+  readingTime  Int                    @default(5) @map("reading_time")
+  status       CheatsheetStatus       @default(draft)
+  featured     Boolean                @default(false)
+  viewCount    Int                    @default(0) @map("view_count")
+  publishedAt  DateTime?              @map("published_at") @db.Timestamptz(6)
+  createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Weighted full-text vector (title/tags = A, description = B, content = C).
+  searchVector Unsupported("tsvector")? @map("search_vector")
+  category     Category               @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  tags         CheatsheetTag[]
+  technologies CheatsheetTechnology[]
+  feedback     Feedback[]
+
+  @@index([categoryId, status])
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([status, viewCount(sort: Desc)])
+  @@index([status, featured])
+  @@index([searchVector], type: Gin, map: "cheatsheets_search_vector_idx")
+  @@map("cheatsheets")
+}
+
+model Tag {
+  id          String          @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String          @unique
+  cheatsheets CheatsheetTag[]
+
+  @@map("tags")
+}
+
+model CheatsheetTag {
+  cheatsheetId String     @map("cheatsheet_id") @db.Uuid
+  tagId        String     @map("tag_id") @db.Uuid
+  cheatsheet   Cheatsheet @relation(fields: [cheatsheetId], references: [id], onDelete: Cascade)
+  tag          Tag        @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([cheatsheetId, tagId])
+  @@index([tagId])
+  @@map("cheatsheet_tags")
+}
+
+model CheatsheetTechnology {
+  cheatsheetId String     @map("cheatsheet_id") @db.Uuid
+  technologyId String     @map("technology_id") @db.Uuid
+  cheatsheet   Cheatsheet @relation(fields: [cheatsheetId], references: [id], onDelete: Cascade)
+  technology   Technology @relation(fields: [technologyId], references: [id], onDelete: Cascade)
+
+  @@id([cheatsheetId, technologyId])
+  @@index([technologyId])
+  @@map("cheatsheet_technologies")
+}
+
+model Feedback {
+  id           String     @id @default(uuid()) @db.Uuid
+  cheatsheetId String     @map("cheatsheet_id") @db.Uuid
+  helpful      Boolean
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  cheatsheet   Cheatsheet @relation(fields: [cheatsheetId], references: [id], onDelete: Cascade)
+
+  @@index([cheatsheetId])
+  @@map("feedback")
+}

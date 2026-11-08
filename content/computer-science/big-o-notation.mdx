@@ -1,0 +1,123 @@
+---
+title: Big O Notation
+slug: big-o-notation
+description: Time and space complexity at a glance — growth rates, how to analyse loops and recursion, amortised cost, and the complexity of common operations and algorithms.
+category: computer-science
+difficulty: beginner
+tags: [big-o, complexity, algorithms, interviews]
+technologies: []
+featured: true
+publishedAt: 2026-09-01
+updatedAt: 2026-10-18
+---
+
+## What Big O measures
+
+Big O describes how the cost of an algorithm **grows** as input size `n` grows, ignoring constants and lower-order terms. It is usually quoted for the worst case.
+
+| Notation | Meaning |
+| --- | --- |
+| `O(f(n))` | Upper bound — grows no faster than `f(n)` |
+| `Ω(f(n))` | Lower bound — grows at least as fast |
+| `Θ(f(n))` | Tight bound — both at once |
+
+## Growth rates
+
+| Complexity | Name | n = 10 | n = 1,000 | n = 1,000,000 | Example |
+| --- | --- | --- | --- | --- | --- |
+| `O(1)` | Constant | 1 | 1 | 1 | Array index, hash lookup |
+| `O(log n)` | Logarithmic | 3 | 10 | 20 | Binary search |
+| `O(n)` | Linear | 10 | 1,000 | 1,000,000 | Single loop |
+| `O(n log n)` | Linearithmic | 33 | 10,000 | 20,000,000 | Merge sort |
+| `O(n²)` | Quadratic | 100 | 1,000,000 | 10¹² | Nested loops |
+| `O(2ⁿ)` | Exponential | 1,024 | ≈10³⁰¹ | — | All subsets |
+| `O(n!)` | Factorial | 3,628,800 | — | — | All permutations |
+
+<Callout type="tip">
+A rough budget: about 10⁸ simple operations per second. With n = 10⁵, an `O(n²)` solution (10¹⁰ steps) will time out, while `O(n log n)` (≈1.7 × 10⁶) is instant.
+</Callout>
+
+## Analysis rules
+
+```python
+# 1. Drop constants: O(2n) -> O(n)
+for x in items: ...
+for x in items: ...
+
+# 2. Nested loops multiply: O(n * m)
+for a in A:
+    for b in B: ...
+
+# 3. Sequential steps add, keep the dominant term: O(n + n^2) -> O(n^2)
+
+# 4. Halving the problem each step: O(log n)
+while n > 1:
+    n //= 2
+
+# 5. Different inputs get different variables
+def merge(a, b): ...   # O(len(a) + len(b)), not O(n)
+```
+
+## Recursion
+
+| Recurrence | Result | Example |
+| --- | --- | --- |
+| `T(n) = T(n/2) + O(1)` | `O(log n)` | Binary search |
+| `T(n) = T(n-1) + O(1)` | `O(n)` | Linear recursion |
+| `T(n) = 2T(n/2) + O(n)` | `O(n log n)` | Merge sort |
+| `T(n) = 2T(n-1) + O(1)` | `O(2ⁿ)` | Naive Fibonacci |
+
+Space for recursion includes the call stack: depth `d` costs `O(d)` extra space.
+
+```python
+from functools import cache
+
+@cache
+def fib(n):              # memoised: O(n) time, O(n) space (was O(2^n))
+    return n if n < 2 else fib(n - 1) + fib(n - 2)
+```
+
+## Amortised complexity
+
+Appending to a dynamic array is usually `O(1)` but occasionally `O(n)` when it resizes. Because capacity doubles, total cost over `n` appends is `O(n)`, so each append is **amortised** `O(1)`.
+
+## Data structure operations
+
+| Structure | Access | Search | Insert | Delete |
+| --- | --- | --- | --- | --- |
+| Array | `O(1)` | `O(n)` | `O(n)` | `O(n)` |
+| Dynamic array (append) | `O(1)` | `O(n)` | `O(1)` amortised | `O(1)` at end |
+| Linked list | `O(n)` | `O(n)` | `O(1)` at known node | `O(1)` at known node |
+| Hash table | — | `O(1)` avg / `O(n)` worst | `O(1)` avg | `O(1)` avg |
+| Balanced BST | `O(log n)` | `O(log n)` | `O(log n)` | `O(log n)` |
+| Binary heap | `O(1)` peek | `O(n)` | `O(log n)` | `O(log n)` pop |
+| Trie | — | `O(k)` key length | `O(k)` | `O(k)` |
+
+## Sorting algorithms
+
+| Algorithm | Best | Average | Worst | Space | Stable |
+| --- | --- | --- | --- | --- | --- |
+| Quick sort | `O(n log n)` | `O(n log n)` | `O(n²)` | `O(log n)` | No |
+| Merge sort | `O(n log n)` | `O(n log n)` | `O(n log n)` | `O(n)` | Yes |
+| Heap sort | `O(n log n)` | `O(n log n)` | `O(n log n)` | `O(1)` | No |
+| Timsort (Python, JS) | `O(n)` | `O(n log n)` | `O(n log n)` | `O(n)` | Yes |
+| Insertion sort | `O(n)` | `O(n²)` | `O(n²)` | `O(1)` | Yes |
+| Counting sort | `O(n + k)` | `O(n + k)` | `O(n + k)` | `O(k)` | Yes |
+
+Comparison sorts cannot beat `O(n log n)` in the worst case.
+
+## Graph algorithms
+
+| Algorithm | Time |
+| --- | --- |
+| BFS / DFS | `O(V + E)` |
+| Dijkstra (binary heap) | `O((V + E) log V)` |
+| Topological sort | `O(V + E)` |
+| Union-find (with path compression) | ≈`O(α(n))` per op |
+
+## Common mistakes
+
+- **Hidden loops:** `list.index`, `in` on a list, string concatenation in a loop, and `slice` copies are all `O(n)`.
+- **Ignoring space complexity** — memoisation and recursion both cost memory.
+- **Assuming hash maps are always `O(1)`** — poor hash functions or adversarial input degrade to `O(n)`.
+- **Optimising the wrong part** — measure before micro-optimising constants.

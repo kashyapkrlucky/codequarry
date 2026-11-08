@@ -1,0 +1,12 @@
+[
+  { "slug": "programming-languages", "name": "Programming Languages", "icon": "code-xml", "sortOrder": 1, "description": "Syntax, idioms, and standard-library essentials for the languages you write every day." },
+  { "slug": "frontend", "name": "Frontend Development", "icon": "panels-top-left", "sortOrder": 2, "description": "Frameworks, layout, markup, and the browser platform — everything that ships to the user." },
+  { "slug": "backend", "name": "Backend Development", "icon": "server", "sortOrder": 3, "description": "Runtimes, API design, and the services that power your applications." },
+  { "slug": "computer-science", "name": "Computer Science", "icon": "cpu", "sortOrder": 4, "description": "Complexity analysis and the fundamentals behind every engineering decision." },
+  { "slug": "data-structures-algorithms", "name": "Data Structures & Algorithms", "icon": "binary", "sortOrder": 5, "parent": "computer-science", "description": "Core structures, their trade-offs, and the algorithms that operate on them." },
+  { "slug": "databases", "name": "Databases", "icon": "database", "sortOrder": 6, "description": "SQL, PostgreSQL, indexing, and query patterns for reliable data storage." },
+  { "slug": "system-design", "name": "System Design", "icon": "boxes", "sortOrder": 7, "description": "Scalability, caching, queues, and the building blocks of distributed systems." },
+  { "slug": "devops", "name": "Cloud & DevOps", "icon": "cloud", "sortOrder": 8, "description": "Containers, version control, and the workflows that get code to production." },
+  { "slug": "networking", "name": "Networking", "icon": "network", "sortOrder": 9, "description": "HTTP, DNS, TCP/IP, and how bytes actually move between machines." },
+  { "slug": "security", "name": "Security", "icon": "shield-check", "sortOrder": 10, "description": "Web vulnerabilities, authentication, and defensive engineering practices." }
+]

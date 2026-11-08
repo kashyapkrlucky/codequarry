@@ -1,0 +1,202 @@
+---
+title: GraphQL Cheatsheet
+slug: graphql
+description: GraphQL schemas, queries, mutations, variables, fragments, subscriptions, resolvers, DataLoader batching, pagination, and production security limits.
+category: backend
+difficulty: intermediate
+tags: [graphql, api, schema, backend]
+technologies: [graphql, typescript, nodejs]
+featured: false
+publishedAt: 2026-10-08
+updatedAt: 2026-10-25
+---
+
+## Schema definition (SDL)
+
+```graphql
+scalar DateTime
+
+enum Role { ADMIN EDITOR VIEWER }
+
+interface Node { id: ID! }
+
+type User implements Node {
+  id: ID!
+  name: String!
+  email: String
+  role: Role!
+  posts(first: Int = 10, after: String): PostConnection!
+}
+
+type Post implements Node {
+  id: ID!
+  title: String!
+  author: User!
+  createdAt: DateTime!
+}
+
+input CreatePostInput {
+  title: String!
+  body: String!
+}
+
+type Query {
+  me: User
+  node(id: ID!): Node
+  posts(first: Int!, after: String): PostConnection!
+}
+
+type Mutation {
+  createPost(input: CreatePostInput!): CreatePostPayload!
+}
+
+type Subscription {
+  postCreated: Post!
+}
+```
+
+| Syntax | Meaning |
+| --- | --- |
+| `String` | Nullable string |
+| `String!` | Non-null string |
+| `[Post!]!` | Non-null list of non-null posts |
+| `input` | Type usable as an argument |
+| `union SearchResult = User \| Post` | One of several object types |
+
+## Queries
+
+```graphql
+query GetUser($id: ID!, $withPosts: Boolean = false) {
+  node(id: $id) {
+    ... on User {
+      id
+      name
+      posts(first: 5) @include(if: $withPosts) {
+        edges { node { ...PostCard } }
+      }
+    }
+  }
+}
+
+fragment PostCard on Post {
+  id
+  title
+  createdAt
+}
+```
+
+```json
+{ "id": "VXNlcjo0Mg==", "withPosts": true }
+```
+
+Use variables — never interpolate user input into the query string.
+
+## Mutations
+
+```graphql
+mutation CreatePost($input: CreatePostInput!) {
+  createPost(input: $input) {
+    post { id title }
+    errors { field message }
+  }
+}
+```
+
+<Callout type="tip">
+Return a payload type from every mutation (`CreatePostPayload`) instead of the bare entity. You can then add fields like `errors` or `clientMutationId` later without breaking clients.
+</Callout>
+
+## Resolvers (TypeScript)
+
+```ts
+const resolvers = {
+  Query: {
+    me: (_parent, _args, ctx) => ctx.user,
+    posts: (_parent, { first, after }, ctx) => ctx.db.posts.page({ first, after }),
+  },
+  User: {
+    // Runs once per User — batch it or you get N+1 queries
+    posts: (user, args, ctx) => ctx.loaders.postsByAuthor.load(user.id),
+  },
+  Mutation: {
+    createPost: async (_p, { input }, ctx) => {
+      if (!ctx.user) throw new GraphQLError("Unauthenticated", { extensions: { code: "UNAUTHENTICATED" } });
+      const post = await ctx.db.posts.create({ ...input, authorId: ctx.user.id });
+      return { post, errors: [] };
+    },
+  },
+};
+```
+
+Resolver signature: `(parent, args, context, info)`. Put per-request things (user, loaders, db) on `context`.
+
+## Solving N+1 with DataLoader
+
+```ts
+import DataLoader from "dataloader";
+
+// Create per request so the cache never leaks between users
+function createLoaders(db: Db) {
+  return {
+    userById: new DataLoader<string, User | null>(async (ids) => {
+      const rows = await db.users.findMany({ where: { id: { in: [...ids] } } });
+      const byId = new Map(rows.map((u) => [u.id, u]));
+      return ids.map((id) => byId.get(id) ?? null);   // same order as ids
+    }),
+  };
+}
+```
+
+## Cursor pagination (Relay connections)
+
+```graphql
+type PostConnection {
+  edges: [PostEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+type PostEdge { cursor: String!  node: Post! }
+type PageInfo { hasNextPage: Boolean!  endCursor: String }
+```
+
+## Errors
+
+```json
+{
+  "data": { "createPost": null },
+  "errors": [
+    {
+      "message": "Title is required",
+      "path": ["createPost"],
+      "extensions": { "code": "BAD_USER_INPUT" }
+    }
+  ]
+}
+```
+
+GraphQL usually returns HTTP `200` even with errors — clients must inspect the `errors` array.
+
+## GraphQL vs REST
+
+| | GraphQL | REST |
+| --- | --- | --- |
+| Endpoint | Single `/graphql` | One per resource |
+| Over/under-fetching | Client selects fields | Fixed representations |
+| HTTP caching | Harder (POST); use persisted queries + GET | Native |
+| Typing | Schema is the contract | OpenAPI (optional) |
+| Best for | Many clients with different data needs | Simple CRUD, public APIs, file transfer |
+
+## Production security
+
+- **Depth and complexity limits** — reject deeply nested or expensive queries.
+- **Persisted queries** — only allow pre-registered operations from first-party clients.
+- **Disable introspection** for private APIs in production.
+- **Pagination caps** — enforce a maximum `first`.
+- **Field-level authorisation** in resolvers, not only at the gateway.
+- **Timeouts and rate limits** per operation.
+
+## Common mistakes
+
+- **Exposing database tables 1:1** as types instead of designing for client use cases.
+- **Nullable everything** or non-null everything — non-null fields that fail null out their entire parent.
+- **Creating DataLoaders globally** — cached data leaks across requests and users.

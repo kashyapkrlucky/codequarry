@@ -1,0 +1,193 @@
+---
+title: React Cheatsheet
+slug: react
+description: Components, props, state, effects, the core hooks, context, refs, forms, Server Components, and performance patterns for React 19.
+category: frontend
+difficulty: intermediate
+tags: [react, hooks, components, jsx]
+technologies: [react, javascript, typescript]
+featured: true
+publishedAt: 2026-09-05
+updatedAt: 2026-11-02
+---
+
+## Components and props
+
+```tsx
+type ButtonProps = {
+  variant?: "primary" | "ghost";
+  children: React.ReactNode;
+} & React.ComponentProps<"button">;
+
+export function Button({ variant = "primary", children, ...rest }: ButtonProps) {
+  return (
+    <button className={`btn btn-${variant}`} {...rest}>
+      {children}
+    </button>
+  );
+}
+
+// Usage
+<Button variant="ghost" onClick={save}>Save</Button>
+```
+
+- Components are functions that return JSX; names start with a capital letter.
+- Props are read-only. Derive values from props instead of copying them into state.
+- `key` must be stable and unique among siblings — use IDs, never array indexes for reorderable lists.
+
+## Rendering patterns
+
+```tsx
+{isLoading ? <Spinner /> : <Results items={items} />}
+{error && <Alert message={error.message} />}
+{items.map((item) => <Row key={item.id} item={item} />)}
+<>{/* Fragment: group without a wrapper element */}</>
+```
+
+<Callout type="warning">
+`{count && <Badge />}` renders `0` when `count` is `0`. Use `{count > 0 && <Badge />}`.
+</Callout>
+
+## Core hooks
+
+| Hook | Purpose |
+| --- | --- |
+| `useState` | Local state that triggers re-render |
+| `useReducer` | State with complex transitions |
+| `useEffect` | Synchronise with external systems after render |
+| `useLayoutEffect` | Like `useEffect` but before paint (measure DOM) |
+| `useRef` | Mutable value or DOM handle that does not re-render |
+| `useContext` / `use` | Read context (and promises, with `use`) |
+| `useMemo` / `useCallback` | Cache a computed value / function between renders |
+| `useId` | Stable unique IDs for accessibility attributes |
+| `useTransition` | Mark updates as non-urgent |
+| `useDeferredValue` | Defer re-rendering of an expensive subtree |
+| `useOptimistic` | Show optimistic state during an async action |
+| `useActionState` | State that updates from a form action |
+
+## State
+
+```tsx
+const [count, setCount] = useState(0);
+setCount((c) => c + 1);              // functional update — safe for batching
+
+const [form, setForm] = useState({ name: "", email: "" });
+setForm((f) => ({ ...f, name: "Ada" })); // replace, never mutate
+
+// Lazy initial state (runs once)
+const [rows] = useState(() => expensiveParse(raw));
+```
+
+```tsx
+type Action = { type: "add"; item: Item } | { type: "remove"; id: string };
+
+function reducer(state: Item[], action: Action): Item[] {
+  switch (action.type) {
+    case "add": return [...state, action.item];
+    case "remove": return state.filter((i) => i.id !== action.id);
+  }
+}
+const [items, dispatch] = useReducer(reducer, []);
+```
+
+## Effects
+
+```tsx
+useEffect(() => {
+  const controller = new AbortController();
+  fetch(`/api/users/${id}`, { signal: controller.signal })
+    .then((r) => r.json())
+    .then(setUser)
+    .catch(() => {});
+  return () => controller.abort();   // cleanup on unmount or before re-run
+}, [id]);                            // re-run when id changes
+```
+
+<Callout type="tip">
+You probably don't need an effect to transform data for rendering, respond to user events, or reset state when a prop changes (use a `key` instead). Effects are for synchronising with things outside React.
+</Callout>
+
+## Refs
+
+```tsx
+const inputRef = useRef<HTMLInputElement>(null);
+<input ref={inputRef} />
+inputRef.current?.focus();
+
+// React 19: ref is a normal prop on function components
+function TextField({ ref, ...props }: React.ComponentProps<"input">) {
+  return <input ref={ref} {...props} />;
+}
+```
+
+## Context
+
+```tsx
+const ThemeContext = createContext<"light" | "dark">("dark");
+
+function App() {
+  return (
+    <ThemeContext value="light">
+      <Toolbar />
+    </ThemeContext>
+  );
+}
+
+function Toolbar() {
+  const theme = use(ThemeContext);
+  return <div data-theme={theme} />;
+}
+```
+
+## Forms and actions (React 19)
+
+```tsx
+function SignupForm() {
+  const [state, formAction, pending] = useActionState(
+    async (_prev: string | null, data: FormData) => {
+      const res = await signup(data.get("email") as string);
+      return res.ok ? null : res.error;
+    },
+    null,
+  );
+  return (
+    <form action={formAction}>
+      <input name="email" type="email" required />
+      <button disabled={pending}>{pending ? "Saving…" : "Sign up"}</button>
+      {state && <p role="alert">{state}</p>}
+    </form>
+  );
+}
+```
+
+## Server and Client Components
+
+| | Server Component (default in RSC frameworks) | Client Component (`"use client"`) |
+| --- | --- | --- |
+| Runs | On the server only | Server (SSR) and browser |
+| Can use | `async`/`await`, DB, secrets | State, effects, event handlers, browser APIs |
+| Ships JS | No | Yes |
+
+Keep Client Components at the leaves: pass Server Components to them as `children`.
+
+## Performance
+
+```tsx
+const MemoRow = memo(Row);                         // skip re-render if props equal
+const sorted = useMemo(() => sortBy(items, key), [items, key]);
+const onSelect = useCallback((id: string) => select(id), [select]);
+const Chart = lazy(() => import("./chart"));       // code-split
+
+<Suspense fallback={<Skeleton />}>
+  <Chart />
+</Suspense>
+```
+
+With the React Compiler enabled, most manual `memo`/`useMemo`/`useCallback` becomes unnecessary.
+
+## Common mistakes
+
+- **Mutating state** (`items.push(x); setItems(items)`) — React sees the same reference and may not re-render.
+- **Missing effect dependencies** — leads to stale values. Satisfy the linter rather than suppressing it.
+- **Storing derived data in state** — compute it during render instead.
+- **Defining components inside components** — they remount on every render and lose state.

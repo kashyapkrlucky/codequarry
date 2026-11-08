@@ -1,0 +1,161 @@
+---
+title: CSS Flexbox & Grid
+slug: css-flexbox-grid
+description: Every Flexbox and Grid property you need, with layout recipes for centering, sidebars, card grids, and responsive design without media-query sprawl.
+category: frontend
+difficulty: beginner
+tags: [css, flexbox, grid, layout, responsive]
+technologies: [css, html]
+featured: false
+publishedAt: 2026-08-12
+updatedAt: 2026-10-05
+---
+
+## When to use which
+
+| Flexbox | Grid |
+| --- | --- |
+| One dimension (row **or** column) | Two dimensions (rows **and** columns) |
+| Content decides size | Layout decides size |
+| Toolbars, nav bars, button groups | Page layouts, card galleries, dashboards |
+
+They combine well: a Grid page layout whose cells use Flexbox internally.
+
+## Flexbox container
+
+```css
+.toolbar {
+  display: flex;
+  flex-direction: row;          /* row | row-reverse | column | column-reverse */
+  flex-wrap: wrap;              /* nowrap (default) | wrap */
+  justify-content: space-between; /* main axis */
+  align-items: center;          /* cross axis */
+  gap: 0.75rem;                 /* space between items */
+}
+```
+
+| Property | Common values |
+| --- | --- |
+| `justify-content` | `flex-start`, `center`, `flex-end`, `space-between`, `space-around`, `space-evenly` |
+| `align-items` | `stretch` (default), `flex-start`, `center`, `flex-end`, `baseline` |
+| `align-content` | Same as justify — distributes wrapped lines |
+
+## Flexbox items
+
+```css
+.item {
+  flex: 1;              /* shorthand for flex: 1 1 0% — grow and share space */
+  flex: 0 0 240px;      /* fixed 240px: don't grow, don't shrink */
+  flex: none;           /* 0 0 auto: size to content */
+  min-width: 0;         /* allow shrinking below content size (long text, code) */
+  align-self: flex-end; /* override align-items for one item */
+  order: -1;            /* visual reorder — does not change tab order */
+}
+```
+
+<Callout type="tip">
+If a flex child overflows with long text or a code block, add `min-width: 0` to it. Flex items default to `min-width: auto`, which refuses to shrink below their content.
+</Callout>
+
+## Grid container
+
+```css
+.layout {
+  display: grid;
+  grid-template-columns: 240px 1fr 200px;
+  grid-template-rows: auto 1fr auto;
+  gap: 1.5rem 2rem;               /* row-gap column-gap */
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+```
+
+| Function / unit | Meaning |
+| --- | --- |
+| `fr` | Fraction of remaining space |
+| `repeat(3, 1fr)` | Three equal columns |
+| `minmax(200px, 1fr)` | At least 200px, at most one fraction |
+| `auto-fill` | Create as many tracks as fit (keeps empty tracks) |
+| `auto-fit` | Same, but collapses empty tracks so items stretch |
+| `minmax(0, 1fr)` | A `1fr` that can shrink below content width |
+
+## Grid placement
+
+```css
+.header  { grid-column: 1 / -1; }          /* span all columns */
+.feature { grid-column: span 2; grid-row: span 2; }
+.sidebar { grid-area: 2 / 1 / 3 / 2; }     /* row-start / col-start / row-end / col-end */
+
+.page {
+  display: grid;
+  grid-template-areas:
+    "header header"
+    "nav    main"
+    "footer footer";
+  grid-template-columns: 220px 1fr;
+}
+.page > header { grid-area: header; }
+.page > nav    { grid-area: nav; }
+.page > main   { grid-area: main; }
+.page > footer { grid-area: footer; }
+```
+
+## Alignment cheat grid
+
+| Axis | Container (all items) | Item (one) |
+| --- | --- | --- |
+| Inline / main | `justify-items` (grid), `justify-content` | `justify-self` (grid) |
+| Block / cross | `align-items` | `align-self` |
+| Both at once | `place-items: center` | `place-self: center` |
+
+## Recipes
+
+```css
+/* Perfect centering */
+.center { display: grid; place-items: center; min-height: 100dvh; }
+
+/* Sticky footer */
+body { display: grid; grid-template-rows: auto 1fr auto; min-height: 100dvh; }
+
+/* Sidebar that wraps under content on narrow screens — no media query */
+.with-sidebar { display: flex; flex-wrap: wrap; gap: 1rem; }
+.with-sidebar > aside { flex: 1 1 15rem; }
+.with-sidebar > main  { flex: 999 1 30rem; min-width: 0; }
+
+/* Push last item to the end of a nav bar */
+.nav { display: flex; gap: 1rem; }
+.nav .account { margin-left: auto; }
+
+/* Align nested card content across siblings */
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); }
+.card  { display: grid; grid-row: span 3; grid-template-rows: subgrid; }
+```
+
+## Responsive patterns
+
+```css
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 48rem) {
+  .grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Container queries: respond to the parent's width, not the viewport */
+.card-wrapper { container-type: inline-size; }
+@container (min-width: 30rem) {
+  .card { display: grid; grid-template-columns: 8rem 1fr; }
+}
+```
+
+## Common mistakes
+
+- **Using margins for spacing** between flex/grid items — use `gap`.
+- **`100vh` on mobile** — the browser chrome makes it taller than the visible area; use `100dvh`.
+- **`order` or `grid-area` reordering** that diverges from DOM order — keyboard and screen-reader users follow the DOM.
+- **`1fr` columns blowing out** with wide content — use `minmax(0, 1fr)`.

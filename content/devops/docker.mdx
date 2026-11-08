@@ -1,0 +1,194 @@
+---
+title: Docker Cheatsheet
+slug: docker
+description: Docker CLI commands, Dockerfile best practices, multi-stage builds, volumes and networking, Compose, debugging containers, and image security.
+category: devops
+difficulty: beginner
+tags: [docker, containers, compose, devops]
+technologies: [docker]
+featured: true
+publishedAt: 2026-08-30
+updatedAt: 2026-10-27
+---
+
+## Core concepts
+
+| Term | Meaning |
+| --- | --- |
+| Image | Read-only template built from layers |
+| Container | A running (or stopped) instance of an image |
+| Registry | Image storage (Docker Hub, GHCR, ECR) |
+| Volume | Persistent data managed by Docker |
+| Network | Virtual network that lets containers reach each other by name |
+
+## Containers
+
+```bash
+docker run -d --name web -p 8080:80 nginx:1.27      # detached, host:container port
+docker run --rm -it ubuntu:24.04 bash                # interactive, delete on exit
+docker run -e NODE_ENV=production --env-file .env app
+docker run -v "$PWD":/app -w /app node:22 npm test   # bind mount working dir
+
+docker ps                 # running
+docker ps -a              # all
+docker logs -f --tail 100 web
+docker exec -it web sh    # shell into a running container
+docker stop web && docker rm web
+docker stats              # live CPU / memory
+docker inspect web        # full JSON config
+```
+
+## Images
+
+```bash
+docker build -t myapp:1.4.0 .
+docker build -t myapp:dev --target dev .            # build a specific stage
+docker buildx build --platform linux/amd64,linux/arm64 -t org/app:1.4.0 --push .
+docker images
+docker tag myapp:1.4.0 ghcr.io/org/myapp:1.4.0
+docker push ghcr.io/org/myapp:1.4.0
+docker history myapp:1.4.0                          # layer sizes
+docker image prune -a                               # remove unused images
+docker system df && docker system prune             # disk usage / clean up
+```
+
+## Production Dockerfile (Node.js, multi-stage)
+
+```dockerfile
+# syntax=docker/dockerfile:1
+FROM node:22-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build && npm prune --omit=dev
+
+FROM node:22-alpine AS runtime
+ENV NODE_ENV=production
+WORKDIR /app
+RUN addgroup -S app && adduser -S app -G app
+COPY --from=build --chown=app:app /app/node_modules ./node_modules
+COPY --from=build --chown=app:app /app/dist ./dist
+USER app
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:3000/health || exit 1
+CMD ["node", "dist/server.js"]
+```
+
+<Callout type="tip">
+Copy dependency manifests and install **before** copying source. Layers are cached top-down, so code changes won't re-run `npm ci`.
+</Callout>
+
+### Instruction reference
+
+| Instruction | Notes |
+| --- | --- |
+| `FROM image:tag AS name` | Pin versions; never rely on `latest` in production |
+| `COPY` vs `ADD` | Prefer `COPY`; `ADD` also extracts archives and fetches URLs |
+| `RUN` | Chain related commands with `&&` to reduce layers |
+| `ENV` / `ARG` | Runtime vs build-time variables (`ARG` is not secret-safe) |
+| `CMD` vs `ENTRYPOINT` | Default args vs fixed executable — use exec (JSON) form |
+| `USER` | Drop root before `CMD` |
+
+## .dockerignore
+
+```text
+node_modules
+.git
+.env*
+dist
+coverage
+*.log
+Dockerfile
+```
+
+## Volumes and networks
+
+```bash
+docker volume create pgdata
+docker run -d --name db -v pgdata:/var/lib/postgresql/data postgres:17
+
+docker network create backend
+docker run -d --network backend --name api myapp
+docker run -d --network backend --name cache redis:7
+# "api" can reach redis at cache:6379
+```
+
+## Docker Compose
+
+```yaml
+# compose.yaml
+services:
+  api:
+    build: .
+    ports: ["3000:3000"]
+    environment:
+      DATABASE_URL: postgres://app:secret@db:5432/app
+    depends_on:
+      db:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: app
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+```
+
+```bash
+docker compose up -d          # start in background
+docker compose up --build     # rebuild images
+docker compose watch          # sync file changes into containers
+docker compose logs -f api
+docker compose exec db psql -U app
+docker compose down -v        # stop and remove volumes
+```
+
+## Debugging
+
+<Steps>
+<Step title="Check status and exit code">
+`docker ps -a` shows `Exited (137)` (killed, often OOM) or `Exited (1)` (app error).
+</Step>
+<Step title="Read the logs">
+`docker logs --tail 200 name` — most startup failures are explained here.
+</Step>
+<Step title="Get a shell">
+`docker exec -it name sh`, or override the entrypoint: `docker run -it --entrypoint sh image`.
+</Step>
+<Step title="Inspect config">
+`docker inspect name` for env, mounts, networks and health-check results.
+</Step>
+</Steps>
+
+## Security
+
+- Run as a non-root `USER`; add `--read-only` and `--cap-drop ALL` where possible.
+- Use small, pinned base images (`-alpine`, `-slim`, distroless) and rebuild regularly for patches.
+- Never bake secrets into images — use build secrets (`--mount=type=secret`) and runtime env/secret stores.
+- Scan images (`docker scout cves image`) in CI.
+
+## Common mistakes
+
+- **Using `latest` tags** — builds become non-reproducible.
+- **Shell-form `CMD npm start`** — signals aren't forwarded, so containers don't shut down gracefully.
+- **Storing data in the container filesystem** — it disappears with the container; use volumes.
+- **Huge build contexts** without `.dockerignore`.

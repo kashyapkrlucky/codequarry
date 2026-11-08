@@ -1,0 +1,17 @@
+[
+  { "slug": "javascript", "name": "JavaScript", "icon": "braces", "description": "The language of the web platform." },
+  { "slug": "typescript", "name": "TypeScript", "icon": "file-code", "description": "JavaScript with a static type system." },
+  { "slug": "go", "name": "Go", "icon": "zap", "description": "A simple, compiled language for concurrent systems." },
+  { "slug": "python", "name": "Python", "icon": "terminal", "description": "A batteries-included general-purpose language." },
+  { "slug": "react", "name": "React", "icon": "atom", "description": "A library for building component-based UIs." },
+  { "slug": "nextjs", "name": "Next.js", "icon": "triangle", "description": "The React framework for full-stack web apps." },
+  { "slug": "css", "name": "CSS", "icon": "paintbrush", "description": "Styling and layout for the web." },
+  { "slug": "html", "name": "HTML", "icon": "file-type", "description": "Semantic structure of web documents." },
+  { "slug": "nodejs", "name": "Node.js", "icon": "hexagon", "description": "Server-side JavaScript runtime built on V8." },
+  { "slug": "graphql", "name": "GraphQL", "icon": "share-2", "description": "A typed query language for APIs." },
+  { "slug": "http", "name": "HTTP", "icon": "globe", "description": "The application protocol of the web." },
+  { "slug": "postgresql", "name": "PostgreSQL", "icon": "database", "description": "The advanced open-source relational database." },
+  { "slug": "sql", "name": "SQL", "icon": "table", "description": "The standard language for relational data." },
+  { "slug": "docker", "name": "Docker", "icon": "container", "description": "Build, ship, and run applications in containers." },
+  { "slug": "git", "name": "Git", "icon": "git-branch", "description": "Distributed version control." }
+]

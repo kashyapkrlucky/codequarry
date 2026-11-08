@@ -1,0 +1,197 @@
+---
+title: JavaScript Cheatsheet
+slug: javascript
+description: Modern JavaScript essentials — variables, functions, destructuring, arrays, objects, async/await, modules, and the equality and scoping rules that cause most bugs.
+category: programming-languages
+difficulty: beginner
+tags: [javascript, es2024, async, arrays]
+technologies: [javascript]
+featured: false
+publishedAt: 2026-08-18
+updatedAt: 2026-10-20
+---
+
+## Variables and scope
+
+```js
+const PI = 3.14159;     // block-scoped, cannot be reassigned
+let count = 0;          // block-scoped, reassignable
+var legacy = true;      // function-scoped, hoisted — avoid
+
+const user = { name: "Ada" };
+user.name = "Grace";    // OK: const prevents rebinding, not mutation
+```
+
+| Keyword | Scope | Hoisted | Reassign | Redeclare |
+| --- | --- | --- | --- | --- |
+| `const` | Block | Yes (TDZ) | No | No |
+| `let` | Block | Yes (TDZ) | Yes | No |
+| `var` | Function | Yes (as `undefined`) | Yes | Yes |
+
+<Callout type="tip">
+Default to `const`. Reach for `let` only when a value really changes. TDZ (temporal dead zone) means accessing a `let`/`const` before its declaration throws a `ReferenceError`.
+</Callout>
+
+## Types and equality
+
+```js
+typeof 42          // "number"
+typeof 10n         // "bigint"
+typeof "hi"        // "string"
+typeof null        // "object"  (historical bug)
+typeof undefined   // "undefined"
+typeof (() => {})  // "function"
+Array.isArray([])  // true — use this, not typeof
+
+0 == "0"           // true  (coercion)
+0 === "0"          // false (strict)
+NaN === NaN        // false — use Number.isNaN(x)
+Object.is(-0, 0)   // false
+```
+
+Falsy values: `false`, `0`, `-0`, `0n`, `""`, `null`, `undefined`, `NaN`. Everything else is truthy — including `[]` and `{}`.
+
+## Functions
+
+```js
+function add(a, b = 0) { return a + b; }          // declaration (hoisted)
+const mul = (a, b) => a * b;                       // arrow: lexical `this`
+const sum = (...nums) => nums.reduce((t, n) => t + n, 0);
+
+// Closures capture variables, not values
+function counter() {
+  let n = 0;
+  return () => ++n;
+}
+const next = counter();
+next(); next(); // 2
+```
+
+## Destructuring, spread, optional chaining
+
+```js
+const { name, role = "user", ...rest } = account;
+const [first, , third] = list;
+const merged = { ...defaults, ...overrides };     // shallow merge
+const copy = [...items, newItem];
+
+const city = order?.customer?.address?.city;      // undefined if any link is nullish
+const size = options.size ?? 10;                  // only null/undefined fall back
+const label = input || "default";                 // any falsy value falls back
+```
+
+## Arrays
+
+```js
+const nums = [3, 1, 4, 1, 5];
+
+nums.map((n) => n * 2);           // [6, 2, 8, 2, 10]
+nums.filter((n) => n > 2);        // [3, 4, 5]
+nums.reduce((acc, n) => acc + n, 0); // 14
+nums.find((n) => n > 3);          // 4
+nums.some((n) => n > 4);          // true
+nums.every(Number.isInteger);     // true
+nums.includes(4);                 // true
+nums.at(-1);                      // 5
+
+// Non-mutating (ES2023)
+nums.toSorted((a, b) => a - b);   // [1, 1, 3, 4, 5]
+nums.toReversed();
+nums.with(0, 99);                 // replace index 0
+
+Object.groupBy(users, (u) => u.role); // { admin: [...], user: [...] }
+```
+
+<Callout type="warning">
+`sort()`, `reverse()` and `splice()` mutate in place, and `sort()` without a comparator sorts as strings: `[10, 9, 1].sort()` gives `[1, 10, 9]`.
+</Callout>
+
+## Objects
+
+```js
+Object.keys(obj);      // ["a", "b"]
+Object.values(obj);    // [1, 2]
+Object.entries(obj);   // [["a", 1], ["b", 2]]
+Object.fromEntries(entries);
+structuredClone(obj);  // deep clone (no functions)
+Object.freeze(obj);    // shallow immutability
+
+const key = "id";
+const record = { [key]: 1, method() { return this[key]; } };
+```
+
+## Classes
+
+```js
+class Animal {
+  #secret = "private";          // private field
+  static count = 0;
+
+  constructor(name) {
+    this.name = name;
+    Animal.count++;
+  }
+  speak() { return `${this.name} makes a sound`; }
+  get secret() { return this.#secret; }
+}
+
+class Dog extends Animal {
+  speak() { return `${super.speak()} — woof`; }
+}
+```
+
+## Async JavaScript
+
+```js
+async function loadUser(id) {
+  const res = await fetch(`/api/users/${id}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// Run in parallel, fail fast
+const [user, posts] = await Promise.all([loadUser(1), loadPosts(1)]);
+
+// Run in parallel, inspect each result
+const results = await Promise.allSettled(tasks);
+
+// First to settle / first to fulfil
+await Promise.race([request, timeout(5000)]);
+await Promise.any([mirrorA, mirrorB]);
+
+// Cancellation
+const controller = new AbortController();
+fetch(url, { signal: controller.signal });
+controller.abort();
+```
+
+### Event loop order
+
+```js
+console.log("1 sync");
+setTimeout(() => console.log("4 macrotask"), 0);
+Promise.resolve().then(() => console.log("3 microtask"));
+console.log("2 sync");
+```
+
+Synchronous code runs first, then **all** microtasks (promises, `queueMicrotask`), then the next macrotask (timers, I/O).
+
+## Modules
+
+```js
+// math.js
+export const square = (x) => x * x;
+export default function cube(x) { return x ** 3; }
+
+// app.js
+import cube, { square } from "./math.js";
+const { heavy } = await import("./heavy.js"); // lazy load
+```
+
+## Common mistakes
+
+- **`await` inside `forEach`** does not wait. Use `for...of` or `Promise.all(items.map(...))`.
+- **Floating point:** `0.1 + 0.2 !== 0.3`. Compare with a tolerance or use integers (cents).
+- **Losing `this`:** passing `obj.method` as a callback detaches it. Use an arrow function or `.bind(obj)`.
+- **`parseInt` without radix** — always pass `10`, or use `Number(value)`.
+- **Mutating shared state** in reducers or props — copy with spread or `structuredClone`.

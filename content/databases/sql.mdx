@@ -1,0 +1,204 @@
+---
+title: SQL Cheatsheet
+slug: sql
+description: Standard SQL for everyday work — SELECT, filtering, joins, aggregation, subqueries, CTEs, window functions, data modification, and query-order gotchas.
+category: databases
+difficulty: beginner
+tags: [sql, queries, joins, window-functions, databases]
+technologies: [sql, postgresql]
+featured: true
+publishedAt: 2026-08-20
+updatedAt: 2026-10-22
+---
+
+## Query anatomy
+
+```sql
+SELECT   c.country, COUNT(*) AS customers
+FROM     customers AS c
+WHERE    c.created_at >= DATE '2026-01-01'
+GROUP BY c.country
+HAVING   COUNT(*) > 10
+ORDER BY customers DESC
+LIMIT    5;
+```
+
+### Logical execution order
+
+| Step | Clause | Consequence |
+| --- | --- | --- |
+| 1 | `FROM` / `JOIN` | Build the row set |
+| 2 | `WHERE` | Filter rows — aliases from SELECT are **not** visible yet |
+| 3 | `GROUP BY` | Collapse into groups |
+| 4 | `HAVING` | Filter groups (can use aggregates) |
+| 5 | `SELECT` | Compute columns and aliases |
+| 6 | `DISTINCT` | Remove duplicates |
+| 7 | `ORDER BY` | Sort — aliases are visible here |
+| 8 | `LIMIT` / `OFFSET` | Trim |
+
+## Filtering
+
+```sql
+WHERE status = 'active'
+  AND age BETWEEN 18 AND 65            -- inclusive
+  AND country IN ('DE', 'FR', 'NL')
+  AND email LIKE '%@example.com'       -- % any chars, _ one char
+  AND deleted_at IS NULL               -- never "= NULL"
+  AND NOT (role = 'guest')
+```
+
+<Callout type="warning">
+`NULL` is unknown, not a value: `NULL = NULL` is `NULL`, and `x NOT IN (1, NULL)` is never true. Use `IS NULL`, `IS DISTINCT FROM`, or `NOT EXISTS`.
+</Callout>
+
+## Joins
+
+```sql
+SELECT o.id, c.name
+FROM orders o
+INNER JOIN customers c ON c.id = o.customer_id;   -- only matches
+
+SELECT c.name, o.id
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id;       -- all customers, orders or NULL
+
+-- Customers without orders (anti-join)
+SELECT c.*
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id
+WHERE o.id IS NULL;
+```
+
+| Join | Returns |
+| --- | --- |
+| `INNER JOIN` | Rows with a match in both tables |
+| `LEFT JOIN` | All left rows + matching right rows (else NULL) |
+| `RIGHT JOIN` | Mirror of LEFT |
+| `FULL OUTER JOIN` | All rows from both, NULLs where unmatched |
+| `CROSS JOIN` | Every combination (Cartesian product) |
+| Self join | A table joined to itself (e.g. employee → manager) |
+
+<Callout type="tip">
+A filter on the right table of a LEFT JOIN belongs in the `ON` clause. Putting it in `WHERE` silently turns the join into an INNER JOIN.
+</Callout>
+
+## Aggregation
+
+```sql
+SELECT
+  department,
+  COUNT(*)                         AS headcount,
+  COUNT(DISTINCT manager_id)       AS managers,
+  AVG(salary)::numeric(10,2)       AS avg_salary,
+  SUM(salary) FILTER (WHERE remote) AS remote_payroll
+FROM employees
+GROUP BY department;
+```
+
+`COUNT(*)` counts rows; `COUNT(col)` skips NULLs.
+
+## Subqueries and CTEs
+
+```sql
+-- Scalar subquery
+SELECT name, (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id) AS orders
+FROM customers c;
+
+-- EXISTS (stops at first match)
+SELECT * FROM products p
+WHERE EXISTS (SELECT 1 FROM order_items i WHERE i.product_id = p.id);
+
+-- Common table expression
+WITH monthly AS (
+  SELECT date_trunc('month', created_at) AS month, SUM(total) AS revenue
+  FROM orders
+  GROUP BY 1
+)
+SELECT month, revenue
+FROM monthly
+WHERE revenue > 10000;
+
+-- Recursive CTE: walk a tree
+WITH RECURSIVE chain AS (
+  SELECT id, manager_id, name, 1 AS depth FROM employees WHERE id = 42
+  UNION ALL
+  SELECT e.id, e.manager_id, e.name, chain.depth + 1
+  FROM employees e JOIN chain ON e.id = chain.manager_id
+)
+SELECT * FROM chain;
+```
+
+## Window functions
+
+```sql
+SELECT
+  name,
+  department,
+  salary,
+  RANK()       OVER (PARTITION BY department ORDER BY salary DESC) AS dept_rank,
+  ROW_NUMBER() OVER (ORDER BY hired_at)                            AS hire_order,
+  salary - AVG(salary) OVER (PARTITION BY department)              AS vs_dept_avg,
+  SUM(salary)  OVER (ORDER BY hired_at ROWS UNBOUNDED PRECEDING)   AS running_total,
+  LAG(salary)  OVER (PARTITION BY id ORDER BY effective_date)      AS previous_salary
+FROM employees;
+```
+
+| Function | Ties |
+| --- | --- |
+| `ROW_NUMBER()` | Unique 1, 2, 3, 4 |
+| `RANK()` | 1, 2, 2, 4 (gaps) |
+| `DENSE_RANK()` | 1, 2, 2, 3 (no gaps) |
+
+Top-N per group: wrap in a CTE and filter `WHERE dept_rank <= 3`.
+
+## Set operations
+
+```sql
+SELECT email FROM customers
+UNION            -- deduplicates (UNION ALL keeps duplicates, faster)
+SELECT email FROM newsletter_subscribers;
+
+SELECT id FROM a INTERSECT SELECT id FROM b;
+SELECT id FROM a EXCEPT    SELECT id FROM b;
+```
+
+## Modifying data
+
+```sql
+INSERT INTO users (email, name) VALUES ('ada@example.com', 'Ada'), ('alan@example.com', 'Alan');
+
+UPDATE products SET price = price * 1.1 WHERE category = 'books';
+
+DELETE FROM sessions WHERE expires_at < now();
+
+BEGIN;
+  UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+  UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+COMMIT;   -- or ROLLBACK;
+```
+
+<Callout type="danger">
+Run the `WHERE` clause as a `SELECT` before any `UPDATE` or `DELETE`, and do it inside a transaction so you can roll back.
+</Callout>
+
+## Table definition
+
+```sql
+CREATE TABLE orders (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  customer_id bigint NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  status      text   NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'shipped')),
+  total       numeric(12, 2) NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (customer_id, created_at)
+);
+
+CREATE INDEX orders_customer_id_idx ON orders (customer_id);
+```
+
+## Common mistakes
+
+- **`SELECT *` in application code** — fetches unneeded columns and breaks when schemas change.
+- **Using an alias in `WHERE`** — not visible yet; repeat the expression or use a CTE.
+- **Non-aggregated columns** in `SELECT` that are missing from `GROUP BY`.
+- **String-building SQL** with user input — always use parameterised queries.

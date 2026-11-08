@@ -1,0 +1,140 @@
+---
+title: Web Security Essentials
+slug: web-security
+description: Defending web applications — the OWASP Top 10 in practice, XSS, CSRF, SQL injection, authentication and sessions, password storage, security headers, and secrets handling.
+category: security
+difficulty: intermediate
+tags: [security, owasp, xss, csrf, authentication]
+technologies: [http, javascript]
+featured: false
+publishedAt: 2026-11-02
+updatedAt: 2026-11-07
+---
+
+## OWASP Top 10 at a glance
+
+| Risk | What goes wrong | Primary defence |
+| --- | --- | --- |
+| Broken access control | Users reach data or actions they shouldn't | Deny by default; check ownership on every request |
+| Cryptographic failures | Plain-text secrets, weak hashing, no TLS | TLS everywhere, modern algorithms, key management |
+| Injection | Untrusted input interpreted as code (SQL, shell, LDAP) | Parameterised queries, no shell interpolation |
+| Insecure design | Missing threat modelling and limits | Abuse cases, rate limits, secure defaults |
+| Security misconfiguration | Debug mode, default creds, open buckets | Hardened, automated configuration |
+| Vulnerable components | Outdated dependencies with known CVEs | Lockfiles, automated updates, scanning |
+| Auth failures | Credential stuffing, weak sessions | MFA, rate limiting, secure session handling |
+| Integrity failures | Unsigned updates, unsafe deserialisation | Signed artifacts, pinned CI dependencies |
+| Logging failures | Attacks go unnoticed | Audit logs, alerting on anomalies |
+| SSRF | Server fetches attacker-chosen URLs | Allow-list destinations, block internal ranges |
+
+## SQL injection
+
+```ts
+// Vulnerable: input becomes part of the query
+db.query(`SELECT * FROM users WHERE email = '${email}'`);
+
+// Safe: parameters are sent separately from the SQL text
+db.query("SELECT * FROM users WHERE email = $1", [email]);
+
+// ORMs and tagged templates parameterise for you
+await prisma.$queryRaw`SELECT * FROM users WHERE email = ${email}`;
+```
+
+Dynamic identifiers (column names for sorting) cannot be parameters — map them through an allow-list.
+
+## Cross-site scripting (XSS)
+
+| Type | Source |
+| --- | --- |
+| Stored | Malicious content saved in the database and shown to others |
+| Reflected | Payload in a URL echoed back in the response |
+| DOM-based | Client-side code writes untrusted data into the DOM |
+
+```ts
+element.textContent = userInput;          // safe: treated as text
+element.innerHTML = userInput;            // dangerous
+
+// React escapes by default; this opts out — sanitise first (e.g. DOMPurify)
+<div dangerouslySetInnerHTML={{ __html: sanitize(html) }} />
+
+// Validate URLs before using them in links
+const safe = /^https?:\/\//i.test(url) ? url : "#";
+```
+
+<Callout type="tip">
+A strict Content Security Policy is your safety net: even if a payload slips through, the browser refuses to run inline or third-party scripts you didn't allow.
+</Callout>
+
+## CSRF
+
+A malicious site makes the victim's browser send an authenticated request to your site.
+
+- Set session cookies with `SameSite=Lax` (or `Strict`) — blocks most cross-site POSTs.
+- Require a CSRF token or check the `Origin` header on state-changing requests.
+- Never change state on `GET`.
+
+## Authentication and sessions
+
+```http
+Set-Cookie: session=4f9c…; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800
+```
+
+| Practice | Why |
+| --- | --- |
+| `HttpOnly` cookies | JavaScript (and XSS) can't read the session |
+| `Secure` | Only sent over HTTPS |
+| Rotate session ID on login | Prevents session fixation |
+| Short-lived access tokens + refresh rotation | Limits damage from a stolen token |
+| MFA (TOTP, WebAuthn/passkeys) | Stops credential stuffing |
+| Generic login errors | Don't reveal whether an email exists |
+| Rate-limit and lock out progressively | Slows brute force |
+
+## Password storage
+
+```ts
+import { hash, verify } from "@node-rs/argon2";
+
+const digest = await hash(password);              // Argon2id with a random salt
+const ok = await verify(digest, attempt);
+```
+
+| Algorithm | Verdict |
+| --- | --- |
+| Argon2id | Recommended |
+| scrypt, bcrypt (cost ≥ 12) | Acceptable |
+| PBKDF2 (high iterations) | Acceptable where FIPS is required |
+| SHA-256, MD5 (even salted) | **Never** — far too fast to brute-force |
+
+## Security headers
+
+```http
+Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-r4nd0m'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'
+Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+X-Content-Type-Options: nosniff
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+Cross-Origin-Opener-Policy: same-origin
+```
+
+## Access control
+
+```ts
+// Every object access checks ownership — not just "is logged in"
+const order = await db.order.findFirst({ where: { id: params.id, userId: session.userId } });
+if (!order) return notFound();          // 404 avoids confirming the ID exists
+```
+
+Insecure direct object references (IDOR) — changing `/orders/41` to `/orders/42` — remain one of the most common real-world bugs.
+
+## Secrets
+
+- Keep secrets in environment variables or a secret manager, never in the repository or client bundles.
+- Prefix rules matter: in Next.js anything starting with `NEXT_PUBLIC_` is shipped to the browser.
+- Scan commits for secrets (pre-commit hooks, push protection) and **rotate** any secret that leaks.
+- Grant each service the least privilege it needs, with separate credentials per environment.
+
+## Common mistakes
+
+- **Trusting client-side validation** or hidden form fields.
+- **Rolling your own crypto or auth** instead of vetted libraries and providers.
+- **Verbose errors in production** that expose stack traces and queries.
+- **Logging sensitive data** — passwords, tokens, full card numbers, or personal data.

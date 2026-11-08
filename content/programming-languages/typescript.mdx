@@ -1,0 +1,227 @@
+---
+title: TypeScript Cheatsheet
+slug: typescript
+description: Types, generics, narrowing, utility types, and tsconfig settings you reach for every day — with the mistakes that trip up experienced developers.
+category: programming-languages
+difficulty: intermediate
+tags: [typescript, types, generics, javascript]
+technologies: [typescript, javascript]
+featured: true
+publishedAt: 2026-09-02
+updatedAt: 2026-10-28
+---
+
+## Basic types
+
+```ts
+let id: number = 42;
+let name: string = "Ada";
+let active: boolean = true;
+let tags: string[] = ["a", "b"];          // or Array<string>
+let pair: [string, number] = ["x", 1];    // tuple
+let anything: unknown = JSON.parse("{}"); // prefer unknown over any
+let nothing: void = undefined;            // function return with no value
+function fail(msg: string): never { throw new Error(msg); }
+```
+
+| Type | Use when |
+| --- | --- |
+| `unknown` | Value of uncertain shape — must narrow before use |
+| `any` | Escape hatch; disables checking (avoid) |
+| `never` | Unreachable code, exhaustive checks |
+| `void` | Function returns nothing useful |
+| `object` | Any non-primitive |
+
+## Interfaces vs type aliases
+
+```ts
+interface User {
+  readonly id: string;
+  name: string;
+  email?: string;               // optional
+}
+
+interface Admin extends User {  // extension
+  permissions: string[];
+}
+
+type Status = "idle" | "loading" | "error";   // unions need `type`
+type Point = { x: number; y: number };
+type Point3D = Point & { z: number };         // intersection
+```
+
+<Callout type="tip">
+Use `interface` for object shapes that may be extended or declaration-merged (public APIs). Use `type` for unions, tuples, mapped and conditional types.
+</Callout>
+
+## Functions
+
+```ts
+function greet(name: string, greeting = "Hello"): string {
+  return `${greeting}, ${name}`;
+}
+
+const add = (a: number, b: number): number => a + b;
+
+// Overloads
+function parse(input: string): number;
+function parse(input: number): string;
+function parse(input: string | number) {
+  return typeof input === "string" ? Number(input) : String(input);
+}
+
+// Typing `this` and rest params
+function sum(...nums: number[]) { return nums.reduce((a, b) => a + b, 0); }
+```
+
+## Narrowing
+
+```ts
+function format(value: string | number | Date) {
+  if (typeof value === "string") return value.trim();
+  if (value instanceof Date) return value.toISOString();
+  return value.toFixed(2);
+}
+
+// Discriminated unions
+type Result =
+  | { ok: true; data: string }
+  | { ok: false; error: Error };
+
+function handle(r: Result) {
+  if (r.ok) return r.data;      // narrowed to success branch
+  return r.error.message;
+}
+
+// `in` operator and custom type guards
+function isUser(x: unknown): x is User {
+  return typeof x === "object" && x !== null && "id" in x;
+}
+```
+
+### Exhaustiveness checking
+
+```ts
+type Shape = { kind: "circle"; r: number } | { kind: "square"; size: number };
+
+function area(s: Shape): number {
+  switch (s.kind) {
+    case "circle": return Math.PI * s.r ** 2;
+    case "square": return s.size ** 2;
+    default: {
+      const _exhaustive: never = s; // compile error if a case is missing
+      return _exhaustive;
+    }
+  }
+}
+```
+
+## Generics
+
+```ts
+function first<T>(items: T[]): T | undefined {
+  return items[0];
+}
+
+// Constraints
+function getProp<T, K extends keyof T>(obj: T, key: K): T[K] {
+  return obj[key];
+}
+
+// Generic defaults
+interface ApiResponse<T = unknown> {
+  data: T;
+  status: number;
+}
+
+// Generic classes
+class Stack<T> {
+  #items: T[] = [];
+  push(item: T) { this.#items.push(item); }
+  pop(): T | undefined { return this.#items.pop(); }
+}
+```
+
+## Utility types
+
+| Utility | Result |
+| --- | --- |
+| `Partial<T>` | All properties optional |
+| `Required<T>` | All properties required |
+| `Readonly<T>` | All properties readonly |
+| `Pick<T, K>` | Only keys `K` |
+| `Omit<T, K>` | All keys except `K` |
+| `Record<K, V>` | Object with keys `K` and values `V` |
+| `Exclude<U, X>` | Remove `X` from union `U` |
+| `Extract<U, X>` | Keep only `X` from union `U` |
+| `NonNullable<T>` | Remove `null` and `undefined` |
+| `ReturnType<F>` | Return type of function `F` |
+| `Parameters<F>` | Tuple of parameter types |
+| `Awaited<T>` | Unwrap a `Promise` |
+
+```ts
+type UserUpdate = Partial<Omit<User, "id">>;
+type Handlers = Record<Status, () => void>;
+type Data = Awaited<ReturnType<typeof fetchUser>>;
+```
+
+## Advanced types
+
+```ts
+// keyof and indexed access
+type UserKeys = keyof User;            // "id" | "name" | "email"
+type NameType = User["name"];          // string
+
+// Mapped types
+type Nullable<T> = { [K in keyof T]: T[K] | null };
+
+// Conditional types with infer
+type ElementOf<T> = T extends (infer U)[] ? U : never;
+
+// Template literal types
+type EventName = `on${Capitalize<"click" | "focus">}`; // "onClick" | "onFocus"
+
+// as const + typeof for literal unions
+const ROLES = ["admin", "editor", "viewer"] as const;
+type Role = (typeof ROLES)[number];    // "admin" | "editor" | "viewer"
+
+// satisfies: validate without widening
+const config = {
+  port: 3000,
+  host: "localhost",
+} satisfies Record<string, string | number>;
+```
+
+## Recommended tsconfig
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true
+  }
+}
+```
+
+<Callout type="info">
+`strict: true` enables `strictNullChecks`, `noImplicitAny`, `strictFunctionTypes` and more. `noUncheckedIndexedAccess` makes `arr[i]` return `T | undefined` — it catches real bugs.
+</Callout>
+
+## Common mistakes
+
+- **Using `any` to silence errors.** Use `unknown` and narrow, or fix the type.
+- **Type assertions as validation.** `data as User` does nothing at runtime — validate external data with a schema library such as Zod.
+- **Non-null assertions everywhere.** `user!.name` hides real `undefined` cases.
+- **Enums for simple unions.** Prefer `type Dir = "up" | "down"`; enums emit runtime code and have surprising numeric behaviour.
+- **Forgetting `import type`.** With `verbatimModuleSyntax`, type-only imports must be marked so they are erased.
+
+<Callout type="warning">
+TypeScript types are erased at compile time. Never trust types for data crossing a network, file, or user-input boundary.
+</Callout>

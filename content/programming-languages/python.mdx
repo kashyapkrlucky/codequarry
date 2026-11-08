@@ -1,0 +1,224 @@
+---
+title: Python Cheatsheet
+slug: python
+description: Python 3 essentials — data types, comprehensions, functions, classes and dataclasses, typing, error handling, iterators, async, and the standard-library modules you use daily.
+category: programming-languages
+difficulty: beginner
+tags: [python, scripting, typing, asyncio]
+technologies: [python]
+featured: false
+publishedAt: 2026-08-25
+updatedAt: 2026-10-12
+---
+
+## Basics
+
+```python
+name = "Ada"                 # str
+age = 36                     # int (arbitrary precision)
+height = 1.68                # float
+active = True                # bool
+nothing = None
+
+f"{name} is {age}"           # f-string
+f"{height:.1f} m"            # "1.7 m"
+f"{age=}"                    # "age=36" (debug)
+
+10 / 3    # 3.333... true division
+10 // 3   # 3  floor division
+10 % 3    # 1
+2 ** 10   # 1024
+```
+
+## Collections
+
+| Type | Literal | Mutable | Ordered | Use for |
+| --- | --- | --- | --- | --- |
+| `list` | `[1, 2]` | Yes | Yes | Sequences |
+| `tuple` | `(1, 2)` | No | Yes | Fixed records, dict keys |
+| `dict` | `{"a": 1}` | Yes | Insertion | Key–value lookup |
+| `set` | `{1, 2}` | Yes | No | Membership, dedupe |
+
+```python
+items = [3, 1, 2]
+items.append(4); items.sort(); items[-1]; items[1:3]
+sorted(items, key=lambda x: -x, reverse=False)
+
+user = {"name": "Ada", "role": "admin"}
+user.get("email", "n/a")
+user |= {"active": True}            # merge (3.9+)
+for key, value in user.items(): ...
+
+seen = {1, 2, 3}
+seen & {2, 3, 4}   # intersection {2, 3}
+seen | {9}         # union
+```
+
+## Comprehensions
+
+```python
+squares = [n * n for n in range(10)]
+evens = [n for n in range(20) if n % 2 == 0]
+lookup = {u.id: u for u in users}
+unique_domains = {email.split("@")[1] for email in emails}
+total = sum(n * n for n in range(1_000_000))   # generator — no list built
+```
+
+## Functions
+
+```python
+def greet(name: str, greeting: str = "Hello", *, shout: bool = False) -> str:
+    msg = f"{greeting}, {name}"
+    return msg.upper() if shout else msg
+
+greet("Ada", shout=True)               # keyword-only after *
+
+def log(*args, **kwargs):              # variadic positional / keyword
+    print(args, kwargs)
+
+from functools import lru_cache
+
+@lru_cache(maxsize=None)
+def fib(n: int) -> int:
+    return n if n < 2 else fib(n - 1) + fib(n - 2)
+```
+
+<Callout type="danger">
+Never use a mutable default argument: `def add(x, items=[])` shares one list across all calls. Use `items=None` and create the list inside the function.
+</Callout>
+
+## Classes and dataclasses
+
+```python
+from dataclasses import dataclass, field
+
+@dataclass(frozen=True, slots=True)
+class Point:
+    x: float
+    y: float
+
+    def distance(self) -> float:
+        return (self.x ** 2 + self.y ** 2) ** 0.5
+
+@dataclass
+class Order:
+    id: int
+    items: list[str] = field(default_factory=list)
+
+class Repository:
+    def __init__(self, conn) -> None:
+        self._conn = conn
+
+    def __repr__(self) -> str:
+        return f"Repository({self._conn!r})"
+
+    @property
+    def connected(self) -> bool:
+        return self._conn is not None
+
+    @classmethod
+    def from_url(cls, url: str) -> "Repository":
+        return cls(connect(url))
+```
+
+## Type hints
+
+```python
+from typing import Literal, Protocol, TypedDict
+
+Status = Literal["active", "disabled"]
+
+class Named(Protocol):
+    name: str
+
+class UserDict(TypedDict):
+    id: int
+    name: str
+
+def first[T](items: list[T]) -> T | None:    # 3.12 generic syntax
+    return items[0] if items else None
+```
+
+Run a checker such as `mypy` or `pyright` in CI — hints are not enforced at runtime.
+
+## Errors and context managers
+
+```python
+try:
+    value = int(raw)
+except ValueError as exc:
+    raise InvalidInput(f"bad number: {raw!r}") from exc
+else:
+    print("parsed")      # only if no exception
+finally:
+    cleanup()            # always
+
+with open("data.txt", encoding="utf-8") as f:
+    for line in f:
+        process(line.rstrip())
+
+from contextlib import contextmanager
+
+@contextmanager
+def timer():
+    start = time.perf_counter()
+    yield
+    print(time.perf_counter() - start)
+```
+
+## Iterators and generators
+
+```python
+def chunks(seq, size):
+    for i in range(0, len(seq), size):
+        yield seq[i : i + size]
+
+for i, item in enumerate(items, start=1): ...
+for a, b in zip(names, scores, strict=True): ...
+
+from itertools import batched, chain, groupby
+list(batched(range(7), 3))   # [(0,1,2), (3,4,5), (6,)]
+```
+
+## Async
+
+```python
+import asyncio
+
+async def fetch(session, url):
+    async with session.get(url) as resp:
+        return await resp.text()
+
+async def main():
+    async with asyncio.TaskGroup() as tg:          # 3.11+
+        tasks = [tg.create_task(fetch(s, u)) for u in urls]
+    results = [t.result() for t in tasks]
+
+asyncio.run(main())
+```
+
+## Handy standard library
+
+| Module | Use |
+| --- | --- |
+| `pathlib` | `Path("a") / "b.txt"`, `.read_text()`, `.glob("*.py")` |
+| `collections` | `Counter`, `defaultdict`, `deque` |
+| `json` | `json.loads`, `json.dumps(obj, indent=2)` |
+| `datetime` | `datetime.now(tz=UTC)`, `timedelta` |
+| `subprocess` | `subprocess.run([...], check=True, capture_output=True)` |
+| `logging` | Structured, levelled logging instead of `print` |
+
+## Environment
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m pytest -q
+```
+
+## Common mistakes
+
+- **`is` vs `==`:** use `is` only for `None`, `True`, `False`.
+- **Modifying a list while iterating** over it — iterate over a copy or build a new list.
+- **Late-binding closures** in loops: `lambda: i` captures the variable, not the value.
+- **Catching bare `except:`** hides `KeyboardInterrupt`; catch specific exceptions.

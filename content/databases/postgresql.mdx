@@ -1,0 +1,179 @@
+---
+title: PostgreSQL Cheatsheet
+slug: postgresql
+description: PostgreSQL-specific power tools — psql commands, data types, JSONB, indexing strategies, EXPLAIN, upserts, full-text search, transactions and isolation, and maintenance.
+category: databases
+difficulty: advanced
+tags: [postgresql, indexes, jsonb, performance, explain]
+technologies: [postgresql, sql]
+featured: false
+publishedAt: 2026-09-28
+updatedAt: 2026-11-04
+---
+
+## psql essentials
+
+```bash
+psql "postgresql://user:pass@host:5432/db?sslmode=require"
+```
+
+| Command | Action |
+| --- | --- |
+| `\l` | List databases |
+| `\c dbname` | Connect to database |
+| `\dt` / `\dt+` | List tables (with sizes) |
+| `\d table` | Describe table, indexes, constraints |
+| `\di` / `\dv` / `\df` | Indexes / views / functions |
+| `\x auto` | Expanded output for wide rows |
+| `\timing on` | Show query duration |
+| `\e` | Edit query in `$EDITOR` |
+| `\copy t TO 'f.csv' CSV HEADER` | Client-side export |
+| `\q` | Quit |
+
+## Data types worth knowing
+
+| Type | Use |
+| --- | --- |
+| `bigint GENERATED ALWAYS AS IDENTITY` | Auto-increment primary key (prefer over `serial`) |
+| `uuid` | Distributed IDs — `gen_random_uuid()`, or UUIDv7 for index locality |
+| `text` | Strings (no performance benefit to `varchar(n)`) |
+| `numeric(p, s)` | Money and exact decimals — never `float` |
+| `timestamptz` | Timestamps — always with time zone |
+| `jsonb` | Semi-structured data, indexable |
+| `text[]`, `int[]` | Arrays |
+| `tsvector` | Full-text search documents |
+| `int4range`, `tstzrange` | Ranges with overlap operators |
+| `enum` / lookup table | Small fixed value sets |
+
+## JSONB
+
+```sql
+SELECT data->>'email'               AS email,      -- text
+       data->'address'->>'city'     AS city,
+       data #>> '{tags,0}'          AS first_tag
+FROM events
+WHERE data @> '{"type": "signup"}'                -- containment (GIN-indexable)
+  AND data ? 'referrer';                          -- key exists
+
+UPDATE events SET data = jsonb_set(data, '{status}', '"processed"');
+UPDATE events SET data = data - 'temp_field';
+
+CREATE INDEX events_data_gin ON events USING gin (data jsonb_path_ops);
+```
+
+## Indexes
+
+```sql
+CREATE INDEX CONCURRENTLY users_email_idx ON users (lower(email));        -- expression
+CREATE INDEX orders_open_idx ON orders (created_at) WHERE status = 'open'; -- partial
+CREATE INDEX orders_cust_created_idx ON orders (customer_id, created_at DESC); -- composite
+CREATE INDEX orders_cover_idx ON orders (customer_id) INCLUDE (total);     -- covering
+CREATE UNIQUE INDEX one_active_sub ON subscriptions (user_id) WHERE active;
+```
+
+| Index type | Best for |
+| --- | --- |
+| B-tree (default) | Equality, ranges, sorting, `LIKE 'prefix%'` |
+| GIN | `jsonb`, arrays, full-text search, trigram (`pg_trgm`) |
+| GiST | Ranges, geometry, exclusion constraints |
+| BRIN | Huge append-only tables ordered by time |
+| Hash | Equality only (rarely better than B-tree) |
+
+<Callout type="tip">
+A composite index on `(a, b)` serves queries on `a` and on `a AND b`, but not on `b` alone. Put equality columns first and range/sort columns last.
+</Callout>
+
+## EXPLAIN
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+SELECT * FROM orders WHERE customer_id = 42 ORDER BY created_at DESC LIMIT 20;
+```
+
+| Plan node | Meaning |
+| --- | --- |
+| `Seq Scan` | Reads the whole table — fine for small tables, a red flag for large ones |
+| `Index Scan` | Uses index, then fetches rows from the heap |
+| `Index Only Scan` | Answered entirely from the index |
+| `Bitmap Heap Scan` | Combines index matches, then reads pages |
+| `Nested Loop` / `Hash Join` / `Merge Join` | Join strategies |
+
+Compare estimated `rows` with actual `rows`. Large mismatches mean stale statistics — run `ANALYZE table`.
+
+## Upserts and RETURNING
+
+```sql
+INSERT INTO inventory (sku, qty)
+VALUES ('A-100', 5)
+ON CONFLICT (sku) DO UPDATE SET qty = inventory.qty + EXCLUDED.qty
+RETURNING sku, qty;
+
+DELETE FROM jobs WHERE id = $1 RETURNING *;
+
+MERGE INTO stock s
+USING incoming i ON s.sku = i.sku
+WHEN MATCHED THEN UPDATE SET qty = s.qty + i.qty
+WHEN NOT MATCHED THEN INSERT (sku, qty) VALUES (i.sku, i.qty);
+```
+
+## Full-text search
+
+```sql
+ALTER TABLE articles ADD COLUMN search tsvector
+  GENERATED ALWAYS AS (
+    setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
+    setweight(to_tsvector('english', coalesce(body, '')), 'B')
+  ) STORED;
+
+CREATE INDEX articles_search_idx ON articles USING gin (search);
+
+SELECT title, ts_rank(search, q) AS rank
+FROM articles, websearch_to_tsquery('english', 'postgres -mysql "full text"') AS q
+WHERE search @@ q
+ORDER BY rank DESC
+LIMIT 10;
+```
+
+## Transactions and locking
+
+| Isolation level | Prevents |
+| --- | --- |
+| Read Committed (default) | Dirty reads |
+| Repeatable Read | + non-repeatable reads (snapshot for the whole transaction) |
+| Serializable | + serialisation anomalies (retry on `40001` errors) |
+
+```sql
+BEGIN;
+SELECT * FROM accounts WHERE id = 1 FOR UPDATE;      -- row lock
+-- Job queue: each worker grabs a different row
+SELECT id FROM jobs WHERE status = 'queued'
+ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED;
+COMMIT;
+
+SET lock_timeout = '5s';         -- fail fast instead of queueing behind long locks
+```
+
+## Maintenance and diagnostics
+
+```sql
+-- Slowest queries (requires pg_stat_statements)
+SELECT query, calls, mean_exec_time, total_exec_time
+FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 10;
+
+-- Running queries
+SELECT pid, now() - query_start AS duration, state, query
+FROM pg_stat_activity WHERE state <> 'idle' ORDER BY duration DESC;
+
+SELECT pg_cancel_backend(12345);       -- cancel query
+SELECT pg_size_pretty(pg_total_relation_size('orders'));
+
+-- Unused indexes
+SELECT relname, indexrelname, idx_scan FROM pg_stat_user_indexes WHERE idx_scan = 0;
+```
+
+## Common mistakes
+
+- **Creating indexes without `CONCURRENTLY`** on busy tables — locks writes for the duration.
+- **Adding a column with a volatile default** on big tables in old versions — check your version's behaviour and batch backfills.
+- **Too many connections** — Postgres uses a process per connection; use a pooler (PgBouncer, or your provider's pooled endpoint) for serverless workloads.
+- **`timestamp` without time zone** for event times.

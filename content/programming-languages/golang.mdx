@@ -1,0 +1,235 @@
+---
+title: Go Cheatsheet
+slug: golang
+description: Go syntax, types, slices and maps, structs and interfaces, error handling, goroutines, channels, and the idioms that make Go code readable.
+category: programming-languages
+difficulty: intermediate
+tags: [go, golang, concurrency, backend]
+technologies: [go]
+featured: false
+publishedAt: 2026-09-10
+updatedAt: 2026-10-15
+---
+
+## Program structure
+
+```go
+package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	name := "gopher"
+	fmt.Printf("hello, %s\n", name)
+	os.Exit(0)
+}
+```
+
+```bash
+go mod init example.com/app   # create module
+go run .                      # compile and run
+go build -o bin/app ./cmd/app # build binary
+go test ./...                 # run all tests
+go vet ./...                  # static checks
+gofmt -w .                    # format (or: go fmt ./...)
+```
+
+## Variables and types
+
+```go
+var count int            // zero value: 0
+var ready bool           // false
+var label string         // ""
+x := 42                  // short declaration (inside functions only)
+const MaxRetries = 3
+
+var (
+	host = "localhost"
+	port = 8080
+)
+
+f := float64(x)          // explicit conversion — no implicit casts
+```
+
+| Type | Zero value | Notes |
+| --- | --- | --- |
+| `int`, `float64` | `0` | `int` is 64-bit on 64-bit platforms |
+| `string` | `""` | Immutable UTF-8 bytes |
+| `bool` | `false` | |
+| pointer, slice, map, chan, func, interface | `nil` | Reading a nil map is fine; writing panics |
+
+## Control flow
+
+```go
+if v, err := strconv.Atoi(s); err == nil {
+	fmt.Println(v)
+}
+
+for i := 0; i < 3; i++ {}           // classic
+for cond {}                           // while
+for {}                                // infinite
+for i, v := range items {}            // slices/arrays
+for k, v := range m {}                // maps (random order)
+for i := range 10 {}                  // Go 1.22+: 0..9
+
+switch day {
+case "sat", "sun":
+	fmt.Println("weekend")
+default:
+	fmt.Println("weekday")             // no fallthrough by default
+}
+```
+
+## Slices and maps
+
+```go
+nums := []int{1, 2, 3}
+nums = append(nums, 4)
+part := nums[1:3]                     // shares the underlying array
+buf := make([]byte, 0, 1024)          // len 0, cap 1024
+clone := slices.Clone(nums)
+slices.Sort(nums)
+idx, found := slices.BinarySearch(nums, 3)
+
+ages := map[string]int{"ada": 36}
+ages["alan"] = 41
+age, ok := ages["bob"]                // ok == false if missing
+delete(ages, "ada")
+keys := slices.Collect(maps.Keys(ages))
+```
+
+<Callout type="warning">
+Sub-slices share memory with the original. Appending to a sub-slice can overwrite elements of the parent if capacity allows. Use `slices.Clone` when you need an independent copy.
+</Callout>
+
+## Structs, methods, interfaces
+
+```go
+type User struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email,omitempty"`
+}
+
+// Pointer receiver: can mutate, avoids copying
+func (u *User) Rename(name string) { u.Name = name }
+
+// Interfaces are satisfied implicitly
+type Notifier interface {
+	Notify(msg string) error
+}
+
+type EmailNotifier struct{ From string }
+
+func (e EmailNotifier) Notify(msg string) error { return nil }
+
+var n Notifier = EmailNotifier{From: "ops@example.com"}
+
+// Type switch
+switch v := anyValue.(type) {
+case string:
+	fmt.Println("string", v)
+case int:
+	fmt.Println("int", v)
+}
+```
+
+## Error handling
+
+```go
+var ErrNotFound = errors.New("not found")
+
+func find(id int) (*User, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("find user %d: %w", id, ErrNotFound)
+	}
+	return &User{ID: id}, nil
+}
+
+u, err := find(0)
+if errors.Is(err, ErrNotFound) {
+	// handle missing user
+}
+
+var pathErr *fs.PathError
+if errors.As(err, &pathErr) {
+	fmt.Println(pathErr.Path)
+}
+
+defer file.Close() // runs when the surrounding function returns (LIFO)
+```
+
+## Generics
+
+```go
+func Map[T, U any](in []T, f func(T) U) []U {
+	out := make([]U, 0, len(in))
+	for _, v := range in {
+		out = append(out, f(v))
+	}
+	return out
+}
+
+type Number interface{ ~int | ~int64 | ~float64 }
+
+func Sum[T Number](xs []T) T {
+	var total T
+	for _, x := range xs {
+		total += x
+	}
+	return total
+}
+```
+
+## Concurrency
+
+```go
+results := make(chan string)       // unbuffered: send blocks until received
+jobs := make(chan int, 100)        // buffered
+
+go func() {
+	defer close(results)
+	results <- "done"
+}()
+
+for r := range results {}          // loop until channel is closed
+
+select {
+case msg := <-results:
+	fmt.Println(msg)
+case <-time.After(2 * time.Second):
+	fmt.Println("timeout")
+case <-ctx.Done():
+	return ctx.Err()
+}
+
+var wg sync.WaitGroup
+for _, url := range urls {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		fetch(url)                  // Go 1.22+: loop var is per-iteration
+	}()
+}
+wg.Wait()
+
+var mu sync.Mutex
+mu.Lock()
+counter++
+mu.Unlock()
+```
+
+<Callout type="tip">
+Pass a `context.Context` as the first argument of anything that does I/O, and respect `ctx.Done()`. Run tests with `go test -race` to catch data races.
+</Callout>
+
+## Common mistakes
+
+- **Ignoring errors** with `_`. Handle or wrap every error with context.
+- **Writing to a nil map** panics — initialise with `make` or a literal.
+- **Goroutine leaks:** a goroutine blocked forever on a channel is never collected. Always provide a way to exit (context, close).
+- **Comparing an interface to nil:** an interface holding a typed nil pointer is not `nil`.
+- **Huge value receivers** on structs that are copied on every call — use pointer receivers consistently for a type.
